@@ -1,18 +1,17 @@
 import express from "express";
 import scrapeRoutes from "./routes/scrapeRoutes.js";
 import cors from "cors";
-// import bodyParser from "body-parser";
-
+import summarizeRoutes from "./routes/summarizeRoutes.js";
 const app = express();
 
 app.use(cors());
 app.use(express.json());
 
-// Scraping Routes
+// Scraping API
 app.use("/api/scrape", scrapeRoutes);
-// app.post("/api/scrape", scrapeRoutes);
 
-
+// Summarization API
+app.use("/api/summarize", summarizeRoutes);
 //check api is working
 app.get("/", (req, res) => {
   res.send("API is working");
