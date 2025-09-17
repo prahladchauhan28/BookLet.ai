@@ -4,6 +4,7 @@ import fs from 'fs-extra';
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { PDFDocument } from 'pdf-lib';
+import sharp from 'sharp';
 
 export const exportSlides = async (req, res) => {
   const { slides, format = 'zip' } = req.body;
@@ -23,32 +24,48 @@ export const exportSlides = async (req, res) => {
     });
     const page = await browser.newPage();
     await page.setViewport({ width: 1080, height: 1350 });
+    page.setDefaultNavigationTimeout(0); // Disable timeout
 
     const images = [];
 
-    // Render all slides to PNG
     for (let i = 0; i < slides.length; i++) {
       const html = slides[i];
       const slidePath = path.join(exportDir, `slide-${i + 1}.png`);
 
       await page.setContent(html, {
         waitUntil: 'domcontentloaded',
-        timeout: 0 // disable timeout (infinite wait)
+        timeout: 0
       });
 
-      // small pause to let the content render
-      await new Promise(r => setTimeout(r, 500));
+      // small delay to let styles/rendering settle
+      await new Promise(resolve => setTimeout(resolve, 500));
 
       await page.screenshot({ path: slidePath, type: 'png' });
 
-      const imgBuffer = await fs.readFile(slidePath);
-      images.push({ name: `slide-${i + 1}.png`, buffer: imgBuffer });
+      // Add watermark using Sharp
+      const watermarkedBuffer = await sharp(slidePath)
+        .composite([
+          {
+            input: Buffer.from(
+              `<svg width="1080" height="1350">
+                 <text x="800" y="1300" font-size="14" fill="rgba(0, 0, 0, 0.5)">
+                   Booklet.AI
+                 </text>
+               </svg>`
+            ),
+            gravity: 'southeast'
+          }
+        ])
+        .png()
+        .toBuffer();
+
+      await fs.writeFile(slidePath, watermarkedBuffer);
+      images.push({ name: `slide-${i + 1}.png`, buffer: watermarkedBuffer });
     }
 
     await browser.close();
 
     if (format === 'zip') {
-      // ZIP Export
       const zip = new JSZip();
       images.forEach(img => zip.file(img.name, img.buffer));
 
@@ -60,7 +77,6 @@ export const exportSlides = async (req, res) => {
         await fs.remove(exportDir);
       });
     } else if (format === 'pdf') {
-      // PDF Export
       const pdfDoc = await PDFDocument.create();
 
       for (const img of images) {
